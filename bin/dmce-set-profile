@@ -1,10 +1,11 @@
 #!/usr/bin/python3
 
+import json
 import sys
 import argparse
 import os
 
-profiles = "printf trace-mc trace coverage syslog racetrack heatmap stub"
+profiles = "printf trace-mc trace coverage syslog racetrack heatmap stub printk"
 
 if len(sys.argv) > 1 and (sys.argv[1] == "-l" or sys.argv[1] == "--listprofiles"):
     print(profiles)
@@ -94,6 +95,10 @@ def setProbeOrProlog(cstring, basename):
         return cstring.split(':')[0] + ":/usr/share/dmce/" + basename + "\n"
     else:
         return cstring.split(':')[0] + ":" + os.path.dirname(cstring.split(':')[1]) + "/" + basename + "\n"
+
+pf = open(f'{homeDirectory}/.config/dmce/dmce.profiles')
+custom_profs = json.load(pf)
+pf.close()
 
 # Modify config file
 count = 0
@@ -278,8 +283,37 @@ while count < len(clines):
             if "DMCE_POST_HOOK" in clines[count]:
                 clines[count] = setProbeOrProlog(clines[count], "dmce-post-hook-racetrack")
 
+        # printf profile
+        elif args.profile == "printk":
+            if "DMCE_NUM_DATA_VARS" in clines[count]:
+                clines[count] = "DMCE_NUM_DATA_VARS:0\n"
+
+            if "DMCE_PROBE_SOURCE" in clines[count]:
+                clines[count] = setProbeOrProlog(clines[count], "dmce-probe-printk.c")
+
+            if "DMCE_PROBE_PROLOG" in clines[count]:
+                clines[count] = setProbeOrProlog(clines[count], "dmce-prolog-default.c")
+
+            if "DMCE_POST_HOOK" in clines[count]:
+                clines[count] = setProbeOrProlog(clines[count], "dmce-post-hook-null")
+
+        elif args.profile in custom_profs:
+            # TODO: Take more variables into account
+            if "DMCE_NUM_DATA_VARS" in clines[count] and "DMCE_NUM_DATA_VARS" in custom_profs[args.profile]:
+                clines[count] = f"DMCE_NUM_DATA_VARS:{custom_profs[args.profile]['DMCE_NUM_DATA_VARS']}\n"
+
+            if "DMCE_PROBE_SOURCE" in clines[count]:
+                clines[count] = f"DMCE_PROBE_SOURCE:{custom_profs[args.profile]['DMCE_PROBE_SOURCE']}\n"
+
+            if "DMCE_PROBE_PROLOG" in clines[count]:
+                clines[count] = f"DMCE_PROBE_PROLOG:{custom_profs[args.profile]['DMCE_PROBE_PROLOG']}\n"
+
+            if "DMCE_POST_HOOK" in clines[count]:
+                clines[count] = f"DMCE_POST_HOOK:{custom_profs[args.profile]['DMCE_POST_HOOK']}\n"
+
         else:
-            print("error: unknown profile. Available profiles: " + profiles, file=sys.stderr)
+            cp = ' '.join(custom_profs.keys())
+            print(f"error: unknown profile. Available profiles: {profiles} {cp}", file=sys.stderr)
             sys.exit(1)
 
 # Modify config folder

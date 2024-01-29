@@ -1,0 +1,170 @@
+#!/usr/bin/python3
+
+import sys
+import argparse
+import os
+import json
+
+homedir = os.getenv('HOME')
+
+DEFAULT_PROFILES = 'printf trace-mc trace coverage syslog racetrack heatmap stub'
+DEFAULT_PROLOG = 'dmce-prolog-default.c'
+DEFAULT_HOOK = 'dmce-post-hook-null'
+DEFAULT_DMCE_DIR = '/usr/share/dmce'
+
+descr = "Create (or delete) dmce profiles for custom probes."
+
+parser = argparse.ArgumentParser(description=descr)
+parser.add_argument('-v', '--verbose', action='store_true', help='Print more information than usual')
+parser.add_argument('-e', '--edit', action='store_true', help='Enable this to edit an existing profile')
+parser.add_argument('-d', '--delete', action='store_true', help='Delete exisiting profile (default profiles cannot be deleted)')
+parser.add_argument('name', type=str, help='New profile name')
+parser.add_argument('-f', '--file', type=str, help="Specify another dmce profile file")
+parser.add_argument('-t', '--template', type=str, help='Name of existing profile to use as template for a new profile')
+parser.add_argument('--prolog', action='store_true', help='If set, generates a custom prolog file (default as template) for the profile to be used by dmce')
+parser.add_argument('--hook', action='store_true', help='If set, generates a custom post-hook for the profile to be used by dmce')
+parser.add_argument('--vars', type=int, help='Some probes (e.g trace) needs to know how many variables to store')
+
+args = parser.parse_args()
+
+def verb_print(s):
+    if args.verbose:
+        print(s)
+
+def write_to_file_and_exit(prof_dic, prof_file_path):
+    prof_file = open(prof_file_path, 'w')
+    json.dump(prof_dic, prof_file, indent=2)
+    prof_file.close()
+    sys.exit(0)
+
+def copy_file_content(src, dst):
+    verb_print(f'info: copying contents of \'{src}\' into \'{dst}\'')
+    f = open(src, 'r')
+    c = f.read()
+    f.close()
+    f = open(dst, 'w')
+    f.write(c)
+    f.close()
+
+
+
+prof_name = args.name
+prof_dic = {}
+prof_file = None
+prof_file_path = f'{homedir}/.config/dmce/dmce.profiles'
+profile_probe_dir = f'{homedir}/.config/dmce/prof'
+
+if args.file != None:
+    prof_file = open(args.file, 'r')
+    prof_dic = json.load(prof_file)
+
+elif not os.path.isfile(prof_file_path):
+    verb_print(f'info: no profile file found, creating one at \'{prof_file_path}\'')
+    prof_file = open(prof_file_path, 'w')
+    prof_file.write('{}') # write empty json
+    prof_dic = {}
+
+else:
+    prof_file = open(prof_file_path, 'r')
+    prof_dic = json.load(prof_file)
+
+prof_file.close()
+
+if not os.path.exists(profile_probe_dir):
+    verb_print(f'info: did not find profile probe directory, creating one at \'{profile_probe_dir}\'')
+    os.mkdir(profile_probe_dir)
+
+if prof_name in DEFAULT_PROFILES or prof_name in prof_dic:
+    if not args.delete and not args.edit:
+        print(f'error: profile \'{prof_name}\' already exist, please choose a different name')
+        sys.exit(1)
+    elif args.delete:
+
+        print(f'Are you sure you want to delete profile {prof_name}? (this action is irreversible!) (y/n) ', end='')
+        if 'y' in input():
+            # Since we save absolute paths, we need to make sure we don't try to remove
+            # someting we shouldn't (i.e, if default files are used in the profile)
+            probe = prof_dic[prof_name]['DMCE_PROBE_SOURCE']
+            if '/usr/' not in probe and os.path.exists(probe):
+                os.remove(probe)
+                verb_print(f'info: delete \'{probe}\'')
+
+            prolog = prof_dic[prof_name]['DMCE_PROBE_PROLOG']
+            if '/usr/' not in prolog and os.path.exists(prolog):
+                os.remove(prolog)
+                verb_print(f'info: delete \'{prolog}\'')
+
+            hook = prof_dic[prof_name]['DMCE_POST_HOOK']
+            if '/usr/' not in hook and os.path.exists(hook):
+                os.remove(hook)
+                verb_print(f'info: delete \'{hook}\'')
+
+            del prof_dic[prof_name]
+            print(f'info: deleted profile \'{prof_name}\'')
+            prof_file = open(prof_file_path, 'w')
+            json.dump(prof_dic, prof_file, indent=2)
+            prof_file.close()
+
+        sys.exit(0)
+
+
+if not args.edit:
+    verb_print(f'info: creating new profile \'{prof_name}\'')
+    prof_dic[prof_name] = {}
+
+if args.template is not None:
+    if args.template in prof_dic:
+        prof_dic[prof_name] = dict(prof_dic)[args.template]
+
+        # TODO: copy/rename necessary files
+
+        write_to_file_and_exit(prof_dic, prof_file_path)
+    else:
+        print(f'error: profile \'{args.template}\' cannot be used as template since it does not exist')
+        sys.exit(1)
+
+# Create probe file
+
+if not args.edit:
+    probe_file_name = f'{profile_probe_dir}/dmce-probe-{prof_name}.c'
+    prof_dic[prof_name]['DMCE_PROBE_SOURCE'] = probe_file_name
+    verb_print(f'info: creating probe file \'{probe_file_name}\'')
+    probe_file = open(probe_file_name, 'w')
+    probe_file.write(
+"""#ifndef __DMCE_PROBE_FUNCTION_BODY__
+#define __DMCE_PROBE_FUNCTION_BODY__
+
+static void dmce_probe_body(unsigned int probenbr) {
+
+}
+#endif
+""")
+    probe_file.close()
+
+if args.vars is None and not args.edit:
+    prof_dic[prof_name]['DMCE_NUM_DATA_VARS'] = 0
+else:
+    prof_dic[prof_name]['DMCE_NUM_DATA_VARS'] = args.vars
+prof_dic[prof_name]['DMCE_PROBE_NBR_OPTIONAL_ELEMENTS'] = prof_dic[prof_name]['DMCE_NUM_DATA_VARS']
+
+# Configure prolog
+default_prolog = f'{DEFAULT_DMCE_DIR}/{DEFAULT_PROLOG}'
+if not args.prolog:
+    prof_dic[prof_name]['DMCE_PROBE_PROLOG'] = default_prolog
+else:
+    prolog_file_name = f'{profile_probe_dir}/dmce-prolog-{prof_name}.c'
+    prof_dic[prof_name]['DMCE_PROBE_PROLOG'] = prolog_file_name
+    copy_file_content(default_prolog, prolog_file_name)
+
+# Configure post hook
+if not args.hook:
+    prof_dic[prof_name]['DMCE_POST_HOOK'] = f'{DEFAULT_DMCE_DIR}/{DEFAULT_HOOK}'
+else:
+    hook_name = f'{profile_probe_dir}/dmce-post-hook-{prof_name}'
+    prof_dic[prof_name]['DMCE_POST_HOOK'] = hook_name
+    verb_print(f'info: creating hook file \'{hook_name}\'')
+    hook = open(hook_name, 'w')
+    hook.write('#!/usr/bin/env bash\n')
+    hook.close()
+
+write_to_file_and_exit(prof_dic, prof_file_path)
