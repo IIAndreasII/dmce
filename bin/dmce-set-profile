@@ -5,7 +5,7 @@ import sys
 import argparse
 import os
 
-profiles = "printf trace-mc trace coverage syslog racetrack heatmap stub printk"
+profiles = "printf trace-mc trace coverage syslog racetrack heatmap stub printk heatmapk"
 
 if len(sys.argv) > 1 and (sys.argv[1] == "-l" or sys.argv[1] == "--listprofiles"):
     print(profiles)
@@ -237,6 +237,20 @@ while count < len(clines):
 
             if "DMCE_PROBE_PROLOG" in clines[count]:
                 clines[count] = setProbeOrProlog(clines[count], "dmce-prolog-default.c")
+
+            if "DMCE_POST_HOOK" in clines[count]:
+                clines[count] = setProbeOrProlog(clines[count], "dmce-post-hook-null")
+
+        # heatmap profile
+        elif args.profile == "heatmapk":
+            if "DMCE_NUM_DATA_VARS" in clines[count]:
+                clines[count] = "DMCE_NUM_DATA_VARS:0\n"
+
+            if "DMCE_PROBE_SOURCE" in clines[count]:
+                clines[count] = setProbeOrProlog(clines[count], "dmce-probe-heatmap-k.c")
+
+            if "DMCE_PROBE_PROLOG" in clines[count]:
+                clines[count] = setProbeOrProlog(clines[count], "dmce-prolog-heatmap-k.c")
 
             if "DMCE_POST_HOOK" in clines[count]:
                 clines[count] = setProbeOrProlog(clines[count], "dmce-post-hook-null")

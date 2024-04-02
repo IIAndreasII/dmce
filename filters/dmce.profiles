@@ -1,0 +1,8 @@
+{
+    "test-prof" : {
+        "DMCE_NUM_DATA_VARS":0,
+        "DMCE_PROBE_SOURCE":"dmce-probe-test-prof.c",
+        "DMCE_PROBE_PROLOG":"default",
+        "DMCE_POST_HOOK":"default"
+    }
+}
