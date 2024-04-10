@@ -7,32 +7,54 @@
 #include <linux/panic.h>
 #include <linux/vmalloc.h>
 #include <linux/string.h>
+#include <linux/syscalls.h>
 #include <asm/page.h>
 
-#define DMCE_BUF_SIZE (8 * DMCE_NBR_OF_PROBES)
-#if (DMCE_BUF_SIZE < PAGE_SIZE)
-#define DMCE_ALLOC() kmalloc(DMCE_BUF_SIZE, GFP_KERNEL)
-#else
-#define DMCE_ALLOC() vmalloc(DMCE_BUF_SIZE)
-#endif
+#define DMCE_BUF_SIZE (sizeof(atomic_t) * DMCE_NBR_OF_PROBES)
+#define DMCE_MAX_NUM_KTHREADS_HOPEFULLY (1024 * 16)
 
-atomic64_t __attribute__((common)) *dmce_buffer;
+#define DMCE_NO_RECURSE 1
+
+atomic_t __attribute__((common)) dmce_buffer[DMCE_NBR_OF_PROBES];
 atomic_t __attribute__((common)) dmce_buffer_allocated;
 int __attribute__((common)) nbr_probes;
+static int done_init = 0;
 
+int __attribute__((common)) dmce_anti_recurse_check[DMCE_MAX_NUM_KTHREADS_HOPEFULLY];
 
 static void dmce_probe_body(unsigned int probenbr)
 {
-    if (atomic_fetch_inc(&dmce_buffer_allocated) == 0)
+#if DMCE_NO_RECURSE
+    pid_t kthread_id = current->pid;
+    if (unlikely(dmce_anti_recurse_check[kthread_id]))
     {
-        dmce_buffer = DMCE_ALLOC();
-        memset(dmce_buffer, 0, DMCE_BUF_SIZE);
-        printk("dmce_probe: dmce_buffer allocated %lu bytes at 0x%px", (long unsigned)DMCE_BUF_SIZE, dmce_buffer);
+        printk("dmce_porbe: probe recursion detected!");
+        return;
+    }
+#endif
+
+    if (unlikely(!done_init))
+    {
+        if (!atomic_fetch_inc(&dmce_buffer_allocated))
+        {
+            // Ugly way to propagate to dmce kernel module
+            nbr_probes = DMCE_NBR_OF_PROBES;
+            for (size_t i = 0; i < DMCE_NBR_OF_PROBES; i++)
+            {
+                atomic_set(&dmce_buffer[i], 0);
+            }
+            printk("dmce_probe: dmce_buffer allocated at address with size: 0x%px %lu", &dmce_buffer, (long unsigned)DMCE_BUF_SIZE);
+        }
+        done_init = 1;
     }
 
-    // Ugly way to propagate to dmce kernel module
-    nbr_probes = DMCE_NBR_OF_PROBES;
-    atomic64_fetch_inc(&dmce_magic[probenbr]);
+#if DMCE_NO_RECURSE
+    dmce_anti_recurse_check[kthread_id] = 1;
+#endif
+    atomic_fetch_inc(&dmce_buffer[probenbr]);
+#if DMCE_NO_RECURSE
+    dmce_anti_recurse_check[kthread_id] = 0;
+#endif
 }
 
 #endif
