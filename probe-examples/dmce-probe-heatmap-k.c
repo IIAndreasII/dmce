@@ -15,12 +15,12 @@
 
 #define DMCE_NO_RECURSE 1
 
-atomic_t __attribute__((common)) dmce_buffer[DMCE_NBR_OF_PROBES];
-atomic_t __attribute__((common)) dmce_buffer_allocated;
-int __attribute__((common)) nbr_probes;
+atomic_t __attribute__((weak)) dmce_buffer[DMCE_NBR_OF_PROBES];
+atomic_t __attribute__((weak)) dmce_buffer_allocated;
+int __attribute__((weak)) nbr_probes;
 static int done_init = 0;
 
-int __attribute__((common)) dmce_anti_recurse_check[DMCE_MAX_NUM_KTHREADS_HOPEFULLY];
+int __attribute__((weak)) dmce_anti_recurse_check[DMCE_MAX_NUM_KTHREADS_HOPEFULLY];
 
 static void dmce_probe_body(unsigned int probenbr)
 {
@@ -28,7 +28,7 @@ static void dmce_probe_body(unsigned int probenbr)
     pid_t kthread_id = current->pid;
     if (unlikely(dmce_anti_recurse_check[kthread_id]))
     {
-        printk("dmce_porbe: probe recursion detected!");
+        printk("dmce_probe: probe recursion detected!");
         return;
     }
 #endif
