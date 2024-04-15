@@ -28,7 +28,7 @@ static void dmce_probe_body(unsigned int probenbr)
     pid_t kthread_id = current->pid;
     if (unlikely(dmce_anti_recurse_check[kthread_id]))
     {
-        printk("dmce_probe: probe recursion detected!");
+        //printk("dmce_probe: probe recursion detected!");
         return;
     }
 #endif
